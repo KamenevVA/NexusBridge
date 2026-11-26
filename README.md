@@ -10,9 +10,14 @@
 ![MCP](https://img.shields.io/badge/protocol-MCP-635bff)
 [![Windows CI](https://github.com/KamenevVA/NexusBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/KamenevVA/NexusBridge/actions/workflows/ci.yml)
 
-[Русский](README.ru.md) · [Roadmap](docs/ROADMAP.md) · [Local MVP runbook](docs/G1-LOCAL.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
+[Русский](#русский-язык) · [Roadmap](docs/ROADMAP.md) · [Local MVP runbook](docs/G1-LOCAL.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
+
+## English
+
+<details open>
+<summary>English — expand / collapse</summary>
 
 ## NexusBridge v0.1.0
 
@@ -73,3 +78,40 @@ The local acceptance suite passed 31/31 internal tests, plus separate non-admin 
 See the [roadmap](docs/ROADMAP.md), [changelog](CHANGELOG.md) and [security policy](SECURITY.md).
 
 Public snapshots exclude private runtime data, credentials, account-specific logs and infrastructure configuration. No open-source license has been selected. NexusBridge is independent, not an official OpenAI product.
+
+</details>
+
+## Русский язык
+
+<details>
+<summary>Русский — раскрыть / свернуть</summary>
+
+# NexusBridge v0.1.0
+
+Независимый self-hosted мост между ИИ-чатом и компьютером владельца через MCP.
+
+[English](#english) · [Дорожная карта](docs/ROADMAP.md) · [Локальный запуск](docs/G1-LOCAL.md) · [Безопасность](SECURITY.md)
+
+**G1 — локальный MVP принят на Windows владельца. Это не production 1.0.** 26 инструментов MCP при явном включении разрешений, 11 только чтения по умолчанию. Стабильный удалённый relay, GUI, установщик и произвольный терминал не реализованы.
+
+- Нативные операции с проверенными файловыми дескрипторами, SHA-256, двоичные данные, патчи, корзина, checkpoints и восстановление после прерывания.
+- Отдельная непривилегированная учётная запись, AppContainer без capabilities и Windows Job Objects для разрешённых шаблонов команд.
+- Локальное точное одноразовое подтверждение, аварийная остановка, защищённый журнал и архивирование.
+- 31/31 внутренних тестов прошли; отдельно проверены ACL и сетевое ограничение AppContainer. Публичный набор не включает приватные тесты аккаунта.
+
+## Проверка
+
+Windows 11 x64, Node.js 24.x, Git, установленный x64 компилятор .NET Framework. Запуск без прав администратора:
+
+```powershell
+git clone https://github.com/KamenevVA/NexusBridge.git
+cd NexusBridge
+npm ci --ignore-scripts
+npm run typecheck
+npm test
+node src/mvp-stdio.ts
+```
+
+Последняя команда запускает одноразовую тестовую среду только для чтения. Защищённый профиль требует отдельной локальной настройки владельцем; см. [инструкцию](docs/G1-LOCAL.md). Не публикуйте сервер через туннель. G0-L подтверждён в обычном ChatGPT Desktop владельца, G0-R web/mobile остаётся отдельным обязательным этапом. Публичный репозиторий не содержит частных журналов, конфигураций и ключей. Лицензия пока не утверждена.
+
+</details>
