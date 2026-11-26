@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-27 — G0-R accepted
+
+- Live authenticated remote Chat four-tool proof, typed read, disk SHA-256, audit, revocation and cleanup verified in the owner environment. Mobile excluded by owner. Durable relay remains next.
+
 ## 0.1.0 — G1 local MVP — 2026-11-26
 
 - Native handle-relative file I/O, pin-race checks and interrupted recovery.
