@@ -16,7 +16,7 @@ const actions=new Set([
   'restore_file_attempt','restore_file_ok','apply_patch_attempt','apply_patch_ok',
   'start_process_attempt','start_process_ok','read_process_output','list_sessions',
   'send_process_input_attempt','send_process_input_ok','terminate_process_attempt',
-  'terminate_process_ok','process_exited','policy_revoked','kill_switch','permission_denied'
+  'terminate_process_ok','process_exited','policy_revoked','kill_switch','permission_denied','approval_requested','approval_consumed'
 ]);
 const allowedInput=new Set(['utc','action','path','template','id','checkpointId','sha256','expectedHash','scanned','outcome']);
 const allowedFields=new Set(['pathDigest','templateDigest','id','checkpointId','sha256','expectedHash','scanned','outcome']);

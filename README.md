@@ -22,13 +22,13 @@ NexusBridge is a Windows-first project for connecting an ordinary ChatGPT conver
 
 ## Current capabilities
 
-| Module | Available in alpha.4 |
+| Module | Available in alpha.5 |
 | :--- | :--- |
-| Files | Directory listing/tree, text and binary reads/writes, search, copy, exact-match edits and ordered patches |
+| Files | Directory listing/tree, text and binary reads/writes, search, copy, exact-match edits, ordered patches, native same-volume move, recoverable trash and restore |
 | Integrity | SHA-256 conflict checks, bounded inputs, backup before replacement |
-| Processes | Locally defined fixed executable templates, bounded output, timeout and cancellation |
-| Guard | Read-only default, explicit sandbox flags, path checks, persistent redacted audit |
-| MCP | Local stdio server with 21 tools when both sandbox flags are enabled; 11 read-only tools by default |
+| Processes | Exact-approved fixed executable templates, native Windows Job Objects, bounded input/output and descendant cancellation |
+| Guard | Read-only default, exact one-time owner approvals, local emergency stop, path checks and persistent redacted audit |
+| MCP | Local stdio server with 25 tools when both sandbox flags are enabled; 11 read-only tools by default |
 
 ## Architecture
 
@@ -61,7 +61,15 @@ Start the local stdio server (read-only by default):
 node src/mvp-stdio.ts
 ```
 
-For a local MCP client testing the disposable sandbox, pass `--sandbox-write` and/or `--sandbox-exec` explicitly. The latter enables only a fixed self-test process. The server communicates using stdio, not a TCP listener. Do not expose this alpha to the internet.
+For a local MCP client testing the disposable sandbox, pass `--sandbox-write` and/or `--sandbox-exec` explicitly. The latter enables only a fixed self-test process, with a one-time local approval. Move, trash and restore also require exact local approval. Native helpers are compiled by npm test or npm run build:native using the installed Windows .NET Framework x64 compiler. The server communicates using stdio, not a TCP listener. Do not expose this alpha to the internet.
+
+For an approval request, the local owner reviews the exact operation using the session name printed to stderr. Run the following in a separate local terminal (not through MCP):
+
+    node scripts/guard-local.mts list alpha-SESSION
+    node scripts/guard-local.mts approve alpha-SESSION APPROVAL-UUID
+    node scripts/guard-local.mts stop alpha-SESSION
+
+Approval is single-use, bound to the exact operation and expires. The experimental dedicated profile runner passed a restricted non-admin Windows test in the owner environment; it does not yet enforce a separate network sandbox and is not production-ready.
 
 ## Road to 1.0
 

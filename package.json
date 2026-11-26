@@ -1,6 +1,6 @@
 {
     "name": "nexusbridge",
-    "version": "0.1.0-alpha.4",
+    "version": "0.1.0-alpha.5",
     "private": true,
     "type": "module",
     "engines": {
@@ -8,8 +8,10 @@
     },
     "scripts": {
         "start": "node src/mvp-stdio.ts",
-        "test": "node --test tests/mvp.test.ts tests/mvp-stdio.test.ts tests/g1-audit-journal.test.ts tests/g1-file-extensions.test.ts",
-        "typecheck": "tsc --noEmit"
+        "test": "node --test tests/mvp.test.ts tests/mvp-stdio.test.ts tests/g1-audit-journal.test.ts tests/g1-file-extensions.test.ts tests/g1-job-object.test.ts tests/g1-process-input.test.ts tests/g1-local-guard.test.ts tests/g1-native-move.test.ts tests/g1-recovery.test.ts",
+        "typecheck": "tsc --noEmit",
+        "build:native": "node scripts/build-native.mts",
+        "pretest": "npm run build:native"
     },
     "dependencies": {
         "@modelcontextprotocol/sdk": "1.32.2",

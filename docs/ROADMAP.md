@@ -15,3 +15,5 @@ Acceptance is evidence-based, not a percentage estimate.
 | G7 | Release | Documents, SBOM, security review, regression, 72-hour soak and installer |
 
 Current focus: G1. The published alpha is deliberately isolated. Later gates remain pending. No date or platform capability is promised without verification.
+
+Alpha.5 progress: native Job Objects, input, move/trash/restore, one-use approval, emergency stop and dedicated non-admin local ACL proof verified. G1 remains in development pending network isolation and remaining security acceptance.

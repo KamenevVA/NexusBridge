@@ -1,6 +1,9 @@
 // G1 workspace prototype. Requires an OS-isolated, owner-selected root; not an OS sandbox.
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, realpath, open, mkdir, readdir, rename, unlink } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { resolve, join, relative, isAbsolute, dirname } from 'node:path';
 const digest=(b:Buffer)=>createHash('sha256').update(b).digest('hex');
 const maxBytes=4*1024*1024;
@@ -16,7 +19,7 @@ function parts(p:string){
   return a;
 }
 const utf8=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true});
-export async function createWorkspace(rootPath:string, options:{write:boolean;checkpointRoot?:string;assertActive:()=>Promise<void>;audit:(e:object)=>Promise<void>}){
+export async function createWorkspace(rootPath:string, options:{write:boolean;checkpointRoot?:string;allowTransfer?:boolean;assertActive:()=>Promise<void>;audit:(e:object)=>Promise<void>}){
   const root=resolve(rootPath);
   const rootStat=await lstat(root);
   if(!rootStat.isDirectory()||rootStat.isSymbolicLink()||resolve(await realpath(root))!==root)throw Error('Unsafe workspace root');
@@ -25,6 +28,50 @@ export async function createWorkspace(rootPath:string, options:{write:boolean;ch
   const outside=(a:string,b:string)=>{const r=relative(a,b);return isAbsolute(r)||r==='..'||r.startsWith('..'+(process.platform==='win32'?'\\':'/'));};
   if(checkpointRoot&&(!checkpointStat?.isDirectory()||checkpointStat.isSymbolicLink()||resolve(await realpath(checkpointRoot))!==checkpointRoot||!outside(root,checkpointRoot)||!outside(checkpointRoot,root)))throw Error('Checkpoint root must be separate');
   async function guardCheckpoint(){if(!checkpointRoot||!checkpointStat)throw Error('Checkpoint store required for replacement');const s=await lstat(checkpointRoot);if(!s.isDirectory()||s.isSymbolicLink()||!same(s,checkpointStat)||resolve(await realpath(checkpointRoot))!==checkpointRoot)throw Error('Checkpoint store changed');return checkpointRoot;}
+  const nativePath=resolve(fileURLToPath(new URL('../.runtime/native/NexusBridge.FileMove.exe',import.meta.url)));
+  let nativeIdentity:{dev:number;ino:number;size:number;mtimeMs:number}|undefined,nativeHash:string|undefined;
+  async function privateRead(p:string,max:number){
+    const s=await lstat(p);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||s.size>max||resolve(await realpath(p))!==p)throw Error('Unsafe private file');
+    const f=await open(p,'r');try{const before=await f.stat();if(!same(s,before)||before.size!==s.size||before.nlink!==1)throw Error('Private file changed');
+      const buf=Buffer.alloc(before.size);let offset=0;while(offset<buf.length){const r=await f.read(buf,offset,buf.length-offset,offset);if(!r.bytesRead)throw Error('Private file truncated');offset+=r.bytesRead;}
+      const after=await f.stat(),check=await lstat(p);if(!same(before,after)||!same(before,check)||after.size!==before.size||after.mtimeMs!==before.mtimeMs||after.nlink!==1||check.nlink!==1)throw Error('Private file changed');
+      return buf;
+    }finally{await f.close();}
+  }
+  if(options.allowTransfer){
+    if(!options.write||!checkpointRoot||process.platform!=='win32'||process.arch!=='x64')throw Error('Transfer requires protected checkpoint store and Windows x64');
+    nativeIdentity=await lstat(nativePath);nativeHash=digest(await privateRead(nativePath,1024*1024));
+  }
+  const runNative=promisify(execFile);
+  async function nativeMove(source:string,destination:string,expectedHash:string){
+    if(!nativeIdentity||!nativeHash)throw Error('Native transfer not enabled');
+    const st=await lstat(nativePath);
+    if(!same(st,nativeIdentity)||st.size!==nativeIdentity.size||st.mtimeMs!==nativeIdentity.mtimeMs||digest(await privateRead(nativePath,1024*1024))!==nativeHash)throw Error('Native transfer helper changed');
+    await active(true);await guardCheckpoint();
+    const env:NodeJS.ProcessEnv={};for(const k of ['SystemRoot','WINDIR','TEMP','TMP'])if(process.env[k])env[k]=process.env[k];
+    try{const r=await runNative(nativePath,[source,destination,expectedHash],{shell:false,windowsHide:true,timeout:10000,maxBuffer:4096,env,cwd:root});
+      if(r.stdout.trim()!=='MOVE_OK')throw Error('Invalid native result');
+    }catch{throw Error('Native transfer refused or unknown outcome; inspect checkpoint before retry');}
+  }
+  type Manifest={v:1;kind:'move'|'trash'|'replace';path:string;sha256:string;destination?:string;newSha256?:string};
+  const validHash=(x:unknown):x is string=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
+  async function privateWrite(name:string,bytes:Buffer){
+    const store=await guardCheckpoint(),p=join(store,name);const f=await open(p,'wx',0o600);
+    try{await f.writeFile(bytes);await f.sync();}finally{await f.close();}
+    await guardCheckpoint();
+  }
+  async function saveManifest(id:string,m:Manifest){await privateWrite(id+'.json',Buffer.from(JSON.stringify(m)+'\n','utf8'));}
+  async function loadManifest(id:string){
+    if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id))throw Error('Invalid checkpoint ID');
+    const store=await guardCheckpoint(),bytes=await privateRead(join(store,id+'.json'),4096);await guardCheckpoint();
+    const m=JSON.parse(utf8.decode(bytes)) as Manifest;
+    if(!m||m.v!==1||typeof m.path!=='string'||!parts(m.path).length||!validHash(m.sha256)||!['move','trash','replace'].includes(m.kind))throw Error('Invalid checkpoint manifest');
+    const keys=Object.keys(m).sort().join(',');
+    if(m.kind==='move'&&(keys!=='destination,kind,path,sha256,v'||typeof m.destination!=='string'||!parts(m.destination).length))throw Error('Invalid move manifest');
+    if(m.kind==='trash'&&keys!=='kind,path,sha256,v')throw Error('Invalid trash manifest');
+    if(m.kind==='replace'&&(keys!=='kind,newSha256,path,sha256,v'||!validHash(m.newSha256)))throw Error('Invalid replacement manifest');
+    return {m,manifestHash:digest(bytes),store};
+  }
   async function active(write=false){await options.assertActive();if(write&&!options.write)throw Error('Write denied');const st=await lstat(root);if(!st.isDirectory()||st.isSymbolicLink()||!same(st,rootStat)||resolve(await realpath(root))!==root)throw Error('Workspace replaced');}
   async function inspect(p:string,missing=false){
     await active();const a=parts(p);let current=root;
@@ -73,6 +120,7 @@ export async function createWorkspace(rootPath:string, options:{write:boolean;ch
     if(prior){
       const store=await guardCheckpoint(),checkpointId=randomUUID(),backup=join(store,checkpointId+'.bak');
       const b=await open(backup,'wx',0o600);try{await b.writeFile(prior);await b.sync();}finally{await b.close();}
+      await saveManifest(checkpointId,{v:1,kind:'replace',path:p,sha256:digest(prior),newSha256:sha256});
       await event('checkpoint_created',p,{checkpointId,sha256:expectedHash});
       const temp=join(dirname(x.path),'.nb-tmp-'+randomUUID());
       let made=false;
@@ -123,6 +171,55 @@ export async function createWorkspace(rootPath:string, options:{write:boolean;ch
     return result;
   }
   async function copy(source:string,destination:string){return writeBytes(destination,await readBytes(source),null);}
+  async function move(source:string,destination:string,expectedHash:string){return serial(async()=>{
+    await active(true);if(!options.allowTransfer||!parts(source).length||!parts(destination).length||!validHash(expectedHash))throw Error('Move denied');
+    const src=await inspect(source),dst=await inspect(destination,true);
+    if(!src.st?.isFile()||dst.st)throw Error('Source or destination conflict');
+    const bytes=await readBytes(source);if(digest(bytes)!==expectedHash)throw Error('Conflict: hash mismatch');
+    const checkpointId=randomUUID();await privateWrite(checkpointId+'.bak',bytes);
+    await saveManifest(checkpointId,{v:1,kind:'move',path:source,destination,sha256:expectedHash});
+    await event('move_file_attempt',source,{expectedHash,checkpointId});
+    await nativeMove(src.path,dst.path,expectedHash);
+    if((await inspect(source,true)).st||digest(await readBytes(destination))!==expectedHash)throw Error('Unknown move outcome');
+    await event('move_file_ok',destination,{sha256:expectedHash,checkpointId});return {sha256:expectedHash,checkpointId,moved:true};
+  });}
+  async function trash(p:string,expectedHash:string){return serial(async()=>{
+    await active(true);if(!options.allowTransfer||!parts(p).length||!validHash(expectedHash))throw Error('Trash denied');
+    const src=await inspect(p);if(!src.st?.isFile()||digest(await readBytes(p))!==expectedHash)throw Error('Conflict: hash mismatch');
+    const store=await guardCheckpoint(),checkpointId=randomUUID();
+    await saveManifest(checkpointId,{v:1,kind:'trash',path:p,sha256:expectedHash});
+    await event('trash_file_attempt',p,{expectedHash,checkpointId});
+    const dest=join(store,checkpointId+'.trash');await nativeMove(src.path,dest,expectedHash);
+    if((await inspect(p,true)).st||digest(await privateRead(dest,maxBytes))!==expectedHash)throw Error('Unknown trash outcome');
+    await event('trash_file_ok',p,{sha256:expectedHash,checkpointId});return {sha256:expectedHash,checkpointId,trashed:true};
+  });}
+  async function describeRestore(checkpointId:string){
+    await active(true);if(!options.allowTransfer)throw Error('Restore denied');
+    const {m,manifestHash}=await loadManifest(checkpointId);return {...m,checkpointId,manifestHash};
+  }
+  async function restore(checkpointId:string,expectedHash:string,manifestHash:string){
+    await active(true);if(!options.allowTransfer||!validHash(expectedHash)||!validHash(manifestHash))throw Error('Restore denied');
+    const initial=await loadManifest(checkpointId);if(initial.manifestHash!==manifestHash)throw Error('Checkpoint changed');
+    if(initial.m.kind==='replace'){
+      if(expectedHash!==initial.m.newSha256)throw Error('Conflict: changed since checkpoint');
+      const backup=await privateRead(join(initial.store,checkpointId+'.bak'),maxBytes);if(digest(backup)!==initial.m.sha256)throw Error('Checkpoint digest mismatch');
+      await event('restore_file_attempt',initial.m.path,{expectedHash,checkpointId});
+      const r=await writeBytes(initial.m.path,backup,expectedHash);
+      await event('restore_file_ok',initial.m.path,{sha256:r.sha256,checkpointId});return {...r,restored:true};
+    }
+    return serial(async()=>{
+      await active(true);const {m,store,manifestHash:actual}=await loadManifest(checkpointId);
+      if(actual!==manifestHash||m.kind==='replace'||expectedHash!==m.sha256)throw Error('Checkpoint changed or hash conflict');
+      const dst=await inspect(m.path,true);if(dst.st)throw Error('Restore destination already exists');
+      let source:string;
+      if(m.kind==='trash'){source=join(store,checkpointId+'.trash');if(digest(await privateRead(source,maxBytes))!==m.sha256)throw Error('Trash digest mismatch');}
+      else{const x=await inspect(m.destination!);if(!x.st?.isFile()||digest(await readBytes(m.destination!))!==m.sha256)throw Error('Move source changed');source=x.path;}
+      await event('restore_file_attempt',m.path,{expectedHash,checkpointId});
+      await nativeMove(source,dst.path,m.sha256);
+      if(digest(await readBytes(m.path))!==m.sha256)throw Error('Unknown restore outcome');
+      await event('restore_file_ok',m.path,{sha256:m.sha256,checkpointId});return {sha256:m.sha256,checkpointId,restored:true};
+    });
+  }
   async function tree(p:string,depth=2){if(!Number.isSafeInteger(depth)||depth<0||depth>5)throw Error('Invalid tree depth');const result:Array<{path:string;type:string}>=[];const queue=[{path:p,depth:0}];let truncated=false;while(queue.length&&result.length<200){const q=queue.shift()!;const page=await list(q.path,200,0);if(page.nextOffset!==null)truncated=true;for(const e of page.entries){if(result.length>=200){truncated=true;break;}const n=q.path&&q.path!=='.'?q.path+'/'+e.name:e.name;result.push({path:n,type:e.type});if(e.type==='directory'&&q.depth<depth)queue.push({path:n,depth:q.depth+1});}}return {entries:result,truncated:truncated||queue.length>0};}
   async function search(query:string,content=false){
     if(!query||query.length>256)throw Error('Invalid query');const q=query.toLocaleLowerCase(),results: Array<{path:string;line?:number}>=[];let scanned=0,dirs=0,truncated=false;
@@ -132,5 +229,5 @@ export async function createWorkspace(rootPath:string, options:{write:boolean;ch
     }
     await event(content?'search_content':'search_files','',{scanned});return {results,scanned,truncated:truncated||pending.length>0||results.length>=100||scanned>=500};
   }
-  return {list,read,readBinary,info,createDirectory,write,writeBinary,edit,applyPatch,copy,tree,search};
+  return {list,read,readBinary,info,createDirectory,write,writeBinary,edit,applyPatch,copy,move,trash,describeRestore,restore,tree,search};
 }

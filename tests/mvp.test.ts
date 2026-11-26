@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { makeMvp } from '../src/mvp-core.ts';
+import {syntheticGuard,approveSynthetic} from './helpers/local-approval.ts';
 
 test('G1 isolated workspace MCP and fixed command lifecycle',async t=>{
   await mkdir(join(process.cwd(),'.runtime'),{recursive:true});
@@ -13,13 +14,13 @@ test('G1 isolated workspace MCP and fixed command lifecycle',async t=>{
   await mkdir(root);await mkdir(outside);await mkdir(checkpointRoot);await writeFile(join(outside,'sentinel.txt'),'outside');
   await writeFile(join(root,'.env'),'synthetic secret');await writeFile(join(root,'existing.txt'),'unchanged');
   await symlink(outside,join(root,'junction'),'junction');await link(join(outside,'sentinel.txt'),join(root,'hardlink.txt'));
-  const logs:object[]=[];let active=true;
-  const m=await makeMvp({root,checkpointRoot,write:true,exec:true,assertActive:async()=>{if(!active)throw Error('Revoked');},audit:async e=>{logs.push(e);},commands:{hello:{exe:process.execPath,args:['-e','process.stdout.write("NB_MVP_OK");process.stderr.write("ERR_TEST");'],cwd:root,timeoutMs:5000},slow:{exe:process.execPath,args:['-e','setTimeout(()=>{},10000)'],cwd:root,timeoutMs:150}}});
+  const {guard}=await syntheticGuard(base);const logs:object[]=[];let active=true;
+  const m=await makeMvp({root,checkpointRoot,guard,write:true,exec:true,assertActive:async()=>{if(!active)throw Error('Revoked');},audit:async e=>{logs.push(e);},commands:{hello:{exe:process.execPath,args:['-e','process.stdout.write("NB_MVP_OK");process.stderr.write("ERR_TEST");'],cwd:root,timeoutMs:5000},slow:{exe:process.execPath,args:['-e','setTimeout(()=>{},10000)'],cwd:root,timeoutMs:150}}});
   const [a,b]=InMemoryTransport.createLinkedPair();const c=new Client({name:'mvp-test',version:'0.1.0'});t.after(async()=>{await c.close();await m.stop();});
   await m.server.connect(a);await c.connect(b);
   async function raw(name:string,args:Record<string,unknown>={}){return c.callTool({name,arguments:args});}
-  async function call(name:string,args:Record<string,unknown>={}){const r=await raw(name,args);assert.equal(r.isError??false,false,JSON.stringify(r));return JSON.parse((r.content as Array<{text:string}>)[0].text);}
-  assert.equal((await c.listTools()).tools.length,20);
+  async function call(name:string,args:Record<string,unknown>={}){let r=await raw(name,args);assert.equal(r.isError??false,false,JSON.stringify(r));let v=JSON.parse((r.content as Array<{text:string}>)[0].text);if(name==='start_process'&&v.status==='awaiting_approval'){await approveSynthetic(base,v);r=await raw(name,{...args,approvalId:v.approvalId});assert.equal(r.isError??false,false,JSON.stringify(r));v=JSON.parse((r.content as Array<{text:string}>)[0].text);}return v;}
+  assert.equal((await c.listTools()).tools.length,24);
   await call('create_directory',{path:'Проект'});
   const content='Привет\r\nNexusBridge\r\n';const hash=createHash('sha256').update(content).digest('hex');
   assert.equal((await call('write_file',{path:'Проект/тест.txt',content,expectedHash:null})).sha256,hash);
