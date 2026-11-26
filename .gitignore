@@ -1,0 +1,14 @@
+node_modules/
+.runtime/
+.env
+.env.*
+*.log
+*.pem
+*.key
+*.pfx
+
+# Private account UI captures
+tests/photo_*.jpg
+
+# Local build artifacts
+dist/

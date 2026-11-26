@@ -1,0 +1,25 @@
+{
+    "name": "nexusbridge",
+    "version": "0.1.0-alpha.4",
+    "private": true,
+    "type": "module",
+    "engines": {
+        "node": ">=24 <25"
+    },
+    "scripts": {
+        "start": "node src/mvp-stdio.ts",
+        "test": "node --test tests/mvp.test.ts tests/mvp-stdio.test.ts tests/g1-audit-journal.test.ts tests/g1-file-extensions.test.ts",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "1.32.2",
+        "express": "5.3.0",
+        "jose": "6.2.18",
+        "zod": "4.6.7"
+    },
+    "devDependencies": {
+        "@types/express": "5.0.6",
+        "@types/node": "^24.0.0",
+        "typescript": "^5.9.3"
+    }
+}

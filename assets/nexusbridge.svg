@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="330" viewBox="0 0 1200 330" role="img" aria-labelledby="title desc">
+<title id="title">NexusBridge</title><desc id="desc">A geometric network bridge on a dark blue background</desc>
+<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#081424"/><stop offset="1" stop-color="#172943"/></linearGradient><linearGradient id="link" x2="1" y2="1"><stop stop-color="#57e0df"/><stop offset="1" stop-color="#8b8cfb"/></linearGradient><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#9bb5d6" stroke-opacity=".08"/></pattern></defs>
+<rect width="1200" height="330" rx="26" fill="url(#bg)"/><rect width="1200" height="330" rx="26" fill="url(#grid)"/>
+<g transform="translate(88 72)" fill="none" stroke="url(#link)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><path d="M24 144V36L160 144V36M24 36L92 8 160 36M24 144L92 172 160 144"/><circle cx="24" cy="36" r="13" fill="#57e0df" stroke="#102033"/><circle cx="160" cy="144" r="13" fill="#8b8cfb" stroke="#102033"/><circle cx="92" cy="8" r="9" fill="#57e0df" stroke="#102033"/><circle cx="92" cy="172" r="9" fill="#8b8cfb" stroke="#102033"/></g>
+<text x="310" y="146" font-family="Segoe UI,Arial,sans-serif" font-size="79" font-weight="700" fill="#f3f7ff" letter-spacing="-2">Nexus<tspan fill="#7bdfe4">Bridge</tspan></text>
+<text x="315" y="196" font-family="Segoe UI,Arial,sans-serif" font-size="26" fill="#b9c9df">YOUR COMPUTER. YOUR POLICY. YOUR BRIDGE.</text>
+<rect x="315" y="232" width="244" height="37" rx="18" fill="#24415a"/><text x="437" y="257" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="17" font-weight="600" fill="#a5e8e8">SELF-HOSTED · MCP</text>
+</svg>
