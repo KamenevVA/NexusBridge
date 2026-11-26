@@ -1,7 +1,7 @@
 // G1 restricted subprocess prototype. No model-supplied executable, arguments or shell.
-// Native Windows job boundary controls process lifetime, not filesystem/network permissions.
+// Job-only runner is synthetic; owner profile uses zero-capability AppContainer plus Job Objects.
 import {spawn,type ChildProcess} from 'node:child_process';
-import {lstat,realpath,readFile} from 'node:fs/promises';
+import {lstat,realpath,readFile,open} from 'node:fs/promises';
 import {resolve,isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomUUID,createHash} from 'node:crypto';
@@ -11,9 +11,19 @@ type Session={id:string;child:ChildProcess;state:'running'|'completed'|'failed'|
 const LIMIT=256*1024,INPUT_LIMIT=16*1024;
 const sha=(b:Buffer)=>createHash('sha256').update(b).digest('hex');
 const same=(a:Identity,b:Identity)=>a.dev===b.dev&&a.ino===b.ino&&a.size===b.size&&a.mtimeMs===b.mtimeMs;
-export async function createProcesses(templates:Readonly<Record<string,Template>>,assertActive:()=>Promise<void>){
-  const allowed=new Map<string,Template&{identity:Identity;cwdIdentity:{dev:number;ino:number}}>(),sessions=new Map<string,Session>();
-  const helper=resolve(fileURLToPath(new URL('../.runtime/native/NexusBridge.Job.exe',import.meta.url)));
+async function executableHash(p:string,expected:Identity){
+  if(expected.size>256*1024*1024)throw Error('Executable size budget exceeded');
+  const f=await open(p,'r');try{
+    const before=await f.stat();if(!before.isFile()||before.nlink!==1||!same(before,expected))throw Error('Executable changed');
+    const hash=createHash('sha256'),b=Buffer.alloc(1024*1024);let offset=0;
+    while(offset<before.size){const r=await f.read(b,0,Math.min(b.length,before.size-offset),offset);if(!r.bytesRead)throw Error('Executable truncated');hash.update(b.subarray(0,r.bytesRead));offset+=r.bytesRead;}
+    const after=await f.stat(),check=await lstat(p);if(!same(before,after)||!same(before,check)||after.nlink!==1||check.nlink!==1||check.isSymbolicLink())throw Error('Executable changed');return hash.digest('hex');
+  }finally{await f.close();}
+}
+export async function createProcesses(templates:Readonly<Record<string,Template>>,assertActive:()=>Promise<void>,appContainerProfile?:string){
+  const allowed=new Map<string,Template&{identity:Identity;exeSha256:string;cwdIdentity:{dev:number;ino:number}}>(),sessions=new Map<string,Session>();
+  if(appContainerProfile&&!/^NexusBridge(?:Proof|Exec)[0-9a-f]{32}$/.test(appContainerProfile))throw Error('Invalid AppContainer profile');
+  const helper=resolve(fileURLToPath(new URL(appContainerProfile?'../.runtime/native/NexusBridge.AppContainer.exe':'../.runtime/native/NexusBridge.Job.exe',import.meta.url)));
   let helperIdentity:Identity|undefined,helperHash:string|undefined;
   if(Object.keys(templates).length){
     if(process.platform!=='win32'||process.arch!=='x64')throw Error('Windows x64 native executor required');
@@ -26,7 +36,7 @@ export async function createProcesses(templates:Readonly<Record<string,Template>
       t.args.some(x=>x.length>4096||x.includes('\0'))||!Number.isSafeInteger(t.timeoutMs)||t.timeoutMs<100||t.timeoutMs>60000)throw Error('Invalid local command template');
     const exe=resolve(t.exe),cwd=resolve(t.cwd),st=await lstat(exe),ct=await lstat(cwd);
     if(!st.isFile()||st.isSymbolicLink()||!ct.isDirectory()||ct.isSymbolicLink()||resolve(await realpath(exe))!==exe||resolve(await realpath(cwd))!==cwd||!exe.toLowerCase().endsWith('.exe'))throw Error('Unsafe executable or working directory');
-    allowed.set(name,{exe,cwd,args:[...t.args],timeoutMs:t.timeoutMs,input:t.input===true,identity:st,cwdIdentity:ct});
+    allowed.set(name,{exe,cwd,args:[...t.args],timeoutMs:t.timeoutMs,input:t.input===true,identity:st,exeSha256:await executableHash(exe,st),cwdIdentity:ct});
   }
   let starting=0,disposed=false;
   async function active(){if(disposed)throw Error('Process executor stopped');await assertActive();}
@@ -39,8 +49,9 @@ export async function createProcesses(templates:Readonly<Record<string,Template>
       if(!st.isFile()||st.isSymbolicLink()||!same(st,t.identity)||!ct.isDirectory()||ct.isSymbolicLink()||ct.dev!==t.cwdIdentity.dev||ct.ino!==t.cwdIdentity.ino||
         resolve(await realpath(t.exe))!==t.exe||resolve(await realpath(t.cwd))!==t.cwd||!hs.isFile()||hs.isSymbolicLink()||hs.nlink!==1||!same(hs,helperIdentity)||resolve(await realpath(helper))!==helper||sha(await readFile(helper))!==helperHash)throw Error('Command template or job helper changed');
       await active();
-      const env:NodeJS.ProcessEnv={};for(const k of ['SystemRoot','WINDIR','TEMP','TMP'])if(process.env[k])env[k]=process.env[k];
-      const child=spawn(helper,[String(process.pid),String(t.timeoutMs),t.exe,t.cwd,...t.args],{cwd:t.cwd,env,shell:false,windowsHide:true,stdio:[t.input?'pipe':'ignore','pipe','pipe']});
+      if(await executableHash(t.exe,t.identity)!==t.exeSha256)throw Error('Approved executable digest changed');await active();
+      const env:NodeJS.ProcessEnv={};const keys=appContainerProfile?['systemroot','windir','systemdrive','userprofile','localappdata','appdata','temp','tmp','homedrive','homepath']:['systemroot','windir','temp','tmp'];for(const [k,v] of Object.entries(process.env))if(keys.includes(k.toLowerCase()))env[k]=v;
+      const child=spawn(helper,[...(appContainerProfile?[appContainerProfile]:[]),String(process.pid),String(t.timeoutMs),t.exe,t.cwd,...t.args],{cwd:t.cwd,env,shell:false,windowsHide:true,stdio:[t.input?'pipe':'ignore','pipe','pipe']});
       const id=randomUUID(),s:Session={id,child,state:'running',exitCode:null,out:Buffer.alloc(0),err:Buffer.alloc(0),truncated:false,inputAllowed:t.input===true,inputBytes:0,inputClosed:!t.input,inputBusy:false,
         timer:setTimeout(()=>{if(s.state==='running'){s.state='timed_out';child.kill();}},t.timeoutMs+250)};
       sessions.set(id,s);
@@ -51,7 +62,7 @@ export async function createProcesses(templates:Readonly<Record<string,Template>
       return {id,status:s.state};
     }finally{starting--;}
   }
-  function describe(name:string){const t=allowed.get(name);if(!t)throw Error('Command not approved');return {template:name,exe:t.exe,args:[...t.args],cwd:t.cwd,timeoutMs:t.timeoutMs,input:t.input===true};}
+  function describe(name:string){const t=allowed.get(name);if(!t)throw Error('Command not approved');return {template:name,exe:t.exe,exeSha256:t.exeSha256,args:[...t.args],cwd:t.cwd,timeoutMs:t.timeoutMs,input:t.input===true,...(appContainerProfile?{isolation:'appcontainer-zero-capability',appContainerProfile}:{})};}
   function lookup(id:string){const s=sessions.get(id);if(!s)throw Error('Unknown managed process');return s;}
   async function output(id:string,channel:'out'|'err',offset=0,length=12000){
     await active();if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(length)||length<1||length>24000)throw Error('Invalid output cursor');

@@ -2,18 +2,16 @@
 
 Acceptance is evidence-based, not a percentage estimate.
 
-| Gate | Scope | Acceptance |
+| Gate | Scope | State |
 |---|---|---|
-| G0-L | ChatGPT Desktop restricted integration | Real protected file write/read and independent hash; passed in owner's environment |
-| G0-R | Web/mobile independent compatibility | Separate real integration evidence |
-| G1 | Core filesystem, terminal, guard | Move/trash and recovery; native Windows file/process isolation; exact local approval; revocation and stop; negative tests |
-| G2 | Relay | Stable authenticated origin, device identity, reconnection, replay protection, VPN/reboot tests |
-| G3 | Console | Local onboarding, tray, approvals, Windows install/uninstall |
-| G4 | Flow | Workspace, Git, deterministic jobs, checkpoint recovery and real build |
-| G5 | Vision | User-visible interactive desktop helper, UI Automation, multi-monitor tests |
-| G6 | Hub | Authorized multi-device, SSH/ADB/WOL and monitoring |
-| G7 | Release | Documents, SBOM, security review, regression, 72-hour soak and installer |
+| G0-L | Restricted ordinary ChatGPT Desktop integration, protected file/hash | Passed in owner environment |
+| G1 | Native files, restricted terminal, local guard, negative tests | Passed in owner environment, v0.1.0 |
+| G0-R | Independent web/mobile integration | Pending |
+| G2 | Stable authenticated relay, pairing, replay, reconnect, VPN/reboot | Blocked by G0-R |
+| G3 | Console, onboarding, tray, installer/uninstall | Pending |
+| G4 | Workspaces, Git, deterministic jobs and recovery | Pending |
+| G5 | Desktop vision and UI automation | Pending |
+| G6 | Multi-device infrastructure, authorized SSH/ADB/WOL | Pending |
+| G7 | Security review, SBOM, 72h soak, production release | Pending |
 
-Current focus: G1. The published alpha is deliberately isolated. Later gates remain pending. No date or platform capability is promised without verification.
-
-Alpha.5 progress: native Job Objects, input, move/trash/restore, one-use approval, emergency stop and dedicated non-admin local ACL proof verified. G1 remains in development pending network isolation and remaining security acceptance.
+Local G1 acceptance includes native handle-relative I/O, pin-race and interrupted-write recovery, dedicated nonadmin AppContainer and child/core separation, bounded Job Objects, exact owner approval, emergency stop, audit anchor and retention. Independent remote compatibility is the next prerequisite. No date or platform capability is promised without verification.

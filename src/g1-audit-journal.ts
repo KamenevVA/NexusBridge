@@ -1,7 +1,7 @@
 // NB-0103: bounded persistent, redacted, tamper-evident audit journal.
 // Requires an owner-controlled OS ACL boundary; a hash chain is not a signature.
 import { createHash } from 'node:crypto';
-import { lstat, open, realpath, mkdir, rmdir, type FileHandle } from 'node:fs/promises';
+import { lstat, open, realpath, mkdir, rmdir, unlink, type FileHandle } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 const sha=(s:string|Buffer)=>createHash('sha256').update(s).digest('hex');
@@ -13,7 +13,7 @@ const actions=new Set([
   'create_directory_attempt','create_directory_ok','write_file_attempt','write_file_ok',
   'edit_file_attempt','edit_file_ok','copy_file_attempt','copy_file_ok','checkpoint_created',
   'move_file_attempt','move_file_ok','trash_file_attempt','trash_file_ok',
-  'restore_file_attempt','restore_file_ok','apply_patch_attempt','apply_patch_ok',
+  'restore_file_attempt','restore_file_ok','get_checkpoint_info','apply_patch_attempt','apply_patch_ok',
   'start_process_attempt','start_process_ok','read_process_output','list_sessions',
   'send_process_input_attempt','send_process_input_ok','terminate_process_attempt',
   'terminate_process_ok','process_exited','policy_revoked','kill_switch','permission_denied','approval_requested','approval_consumed'
@@ -65,10 +65,33 @@ function decode(buffer:Buffer,workspaceId:string,maxRecords:number):AuditRecord[
   }
   return records;
 }
-export async function openAuditJournal(rootPath:string,workspaceId:string,options:{maxBytes?:number;maxRecords?:number}={}){
+export type AuditAnchor={v:1;workspaceId:string;seq:number;digest:string};
+export function parseAuditAnchor(input:unknown,workspaceId:string):AuditAnchor{
+  if(!plain(input)||Object.keys(input).sort().join(',')!=='digest,seq,v,workspaceId'||input.v!==1||
+    input.workspaceId!==workspaceId.toLowerCase()||typeof input.seq!=='number'||!Number.isSafeInteger(input.seq)||input.seq<0||input.seq>50_000||
+    typeof input.digest!=='string'||!hashRE.test(input.digest)||(input.seq===0&&input.digest!==genesis))throw Error('Invalid trusted audit anchor');
+  return {v:1,workspaceId:input.workspaceId as string,seq:input.seq,digest:input.digest};
+}
+function verifyAnchor(records:AuditRecord[],workspaceId:string,anchor?:AuditAnchor){
+  if(!anchor)return;
+  const a=parseAuditAnchor(anchor,workspaceId);
+  if(a.seq>records.length||(a.seq===0?genesis:records[a.seq-1].digest)!==a.digest)throw Error('Trusted audit anchor mismatch or truncation');
+}
+export async function readAuditAnchor(path:string,workspaceId:string):Promise<AuditAnchor|undefined>{
+  const p=resolve(path),s=await lstat(p).catch(e=>{if((e as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw e;});
+  if(!s)return undefined;
+  if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||s.size>2048||resolve(await realpath(p))!==p)throw Error('Unsafe trusted audit anchor');
+  const f=await open(p,'r');try{
+    const before=await f.stat();if(!same(s,before)||before.size!==s.size||before.nlink!==1)throw Error('Anchor replaced');
+    const buf=Buffer.alloc(before.size);let at=0;while(at<buf.length){const r=await f.read(buf,at,buf.length-at,at);if(!r.bytesRead)throw Error('Anchor truncated');at+=r.bytesRead;}
+    const after=await f.stat(),check=await lstat(p);if(!same(before,after)||!same(before,check)||after.size!==before.size||after.mtimeMs!==before.mtimeMs||after.nlink!==1||check.nlink!==1)throw Error('Anchor changed');
+    return parseAuditAnchor(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(buf)),workspaceId);
+  }finally{await f.close();}
+}
+export async function openAuditJournal(rootPath:string,workspaceId:string,options:{maxBytes?:number;maxRecords?:number;anchor?:AuditAnchor;requireAnchorOnExisting?:boolean;retentionDays?:number;maintenance?:boolean}={}){
   if(!uuidRE.test(workspaceId))throw Error('Invalid workspace ID');
   workspaceId=workspaceId.toLowerCase();
-  const maxBytes=options.maxBytes??8*1024*1024,maxRecords=options.maxRecords??20_000;
+  const maxBytes=options.maxBytes??8*1024*1024,maxRecords=options.maxRecords??20_000,retentionDays=options.retentionDays??30;const anchor=options.anchor?parseAuditAnchor(options.anchor,workspaceId):undefined;if(!Number.isSafeInteger(retentionDays)||retentionDays<1||retentionDays>365)throw Error('Invalid audit retention');
   if(!Number.isSafeInteger(maxBytes)||maxBytes<512||maxBytes>32*1024*1024||!Number.isSafeInteger(maxRecords)||maxRecords<1||maxRecords>50_000)throw Error('Invalid journal limits');
   const root=resolve(rootPath),p=join(root,'audit-v1.jsonl');
   const initial=await lstat(root);
@@ -85,6 +108,7 @@ export async function openAuditJournal(rootPath:string,workspaceId:string,option
   try{
   const existing=await lstat(p).catch(e=>{if((e as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw e;});
   if(existing&&(!existing.isFile()||existing.isSymbolicLink()||existing.nlink!==1||existing.size>maxBytes||resolve(await realpath(p))!==p))throw Error('Unsafe audit file');
+  if((existing&&options.requireAnchorOnExisting&&!anchor)||(!existing&&anchor&&anchor.seq>0))throw Error('Trusted audit anchor required or journal missing');
   const fd:FileHandle=await open(p,existing?'r+':'wx+',0o600);
   try{
     const original=await fd.stat();
@@ -100,7 +124,7 @@ export async function openAuditJournal(rootPath:string,workspaceId:string,option
     const data=Buffer.alloc(original.size);
     let at=0;while(at<data.length){const r=await fd.read(data,at,data.length-at,at);if(!r.bytesRead)throw Error('Audit read truncated');at+=r.bytesRead;}
     await guard(original.size);
-    let records=decode(data,workspaceId,maxRecords),size=original.size,head=records.at(-1)?.digest??genesis;
+    let records=decode(data,workspaceId,maxRecords),size=original.size,head=records.at(-1)?.digest??genesis;verifyAnchor(records,workspaceId,anchor);
     let tail:Promise<unknown>=Promise.resolve(),closed=false,poisoned=false;
     function serial<T>(fn:()=>Promise<T>){const q=tail.then(fn);tail=q.catch(()=>{});return q;}
     function usable(){if(closed||poisoned)throw Error('Audit journal unavailable');}
@@ -110,7 +134,7 @@ export async function openAuditJournal(rootPath:string,workspaceId:string,option
       const bytes=Buffer.alloc(size);let offset=0;while(offset<size){const r=await fd.read(bytes,offset,size-offset,offset);if(!r.bytesRead)throw Error('Audit read truncated');offset+=r.bytesRead;}
       const actual=decode(bytes,workspaceId,maxRecords);
       if(actual.length!==records.length||(actual.at(-1)?.digest??genesis)!==head)throw Error('Audit chain changed');
-      await guard(size);
+      await guard(size);return bytes;
     }
     function append(input:unknown){
       const {action,fields}=redacted(input);
@@ -134,8 +158,28 @@ export async function openAuditJournal(rootPath:string,workspaceId:string,option
       try{await verifyCurrent();}catch(e){poisoned=true;throw e;}
       return {records:structuredClone(records.slice(offset,offset+limit)),nextOffset:offset+limit<records.length?offset+limit:null,head};
     });}
+    function snapshot(){return serial(async()=>{
+      usable();let bytes:Buffer;try{bytes=await verifyCurrent();}catch(e){poisoned=true;throw e;}
+      const firstUtc=records[0]?.utc??null,lastUtc=records.at(-1)?.utc??null;
+      const summary={workspaceId,count:records.length,head,firstUtc,lastUtc,retentionDays,retentionEligible:lastUtc!==null&&Date.parse(lastUtc)<=Date.now()-retentionDays*86400000,sha256:sha(bytes)};
+      return {bytes,summary,anchor:{v:1 as const,workspaceId,seq:records.length,digest:head}};
+    });}
+    // Owner-side offline retirement only. The current head must already be trusted,
+    // the configured retention period elapsed, and a byte-identical archive verified.
+    function retireArchived(archive:Buffer,expectedHead:string){return serial(async()=>{
+      usable();if(!options.maintenance||!anchor||anchor.seq!==records.length||anchor.digest!==head||head!==expectedHead)throw Error('Current trusted owner anchor required');
+      const last=records.at(-1)?.utc;
+      if(!last||Date.parse(last)>Date.now()-retentionDays*86400000)throw Error('Audit retention period not elapsed');
+      const bytes=await verifyCurrent();if(!Buffer.isBuffer(archive)||archive.length!==bytes.length||!archive.equals(bytes))throw Error('Verified identical archive required');
+      await guard(size);closed=true;
+      try{
+        await fd.close();await checkLease();
+        const s=await lstat(p);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||!same(s,original)||s.size!==size||resolve(await realpath(p))!==p)throw Error('Audit changed before retirement');
+        await unlink(p);records=[];
+      }finally{await release();}
+    });}
     function close(){return serial(async()=>{if(!closed){closed=true;await fd.close();await release();records=[];}});}
-    return {append,page,close};
+    return {append,page,snapshot,retireArchived,close};
   }catch(e){await fd.close().catch(()=>{});throw e;}
   }catch(e){await release().catch(()=>{});throw e;}
 }

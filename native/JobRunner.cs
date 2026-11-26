@@ -36,6 +36,8 @@ internal static class JobRunner {
     [StructLayout(LayoutKind.Sequential)] struct ProcessInfo { public IntPtr Process,Thread;public uint ProcessId,ThreadId; }
     [DllImport("kernel32.dll",SetLastError=true,CharSet=CharSet.Unicode)] static extern IntPtr CreateJobObject(IntPtr attributes,string name);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool SetInformationJobObject(IntPtr job,int cls,ref Extended data,uint size);
+    [StructLayout(LayoutKind.Sequential)] struct CpuRate { public uint ControlFlags,Rate; }
+    [DllImport("kernel32.dll",EntryPoint="SetInformationJobObject",SetLastError=true)] static extern bool SetCpuRate(IntPtr job,int cls,ref CpuRate data,uint size);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool InitializeProcThreadAttributeList(IntPtr list,int count,uint flags,ref IntPtr size);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool UpdateProcThreadAttribute(IntPtr list,uint flags,UIntPtr attribute,IntPtr value,UIntPtr size,IntPtr previous,IntPtr retSize);
     [DllImport("kernel32.dll")] static extern void DeleteProcThreadAttributeList(IntPtr list);
@@ -84,8 +86,9 @@ internal static class JobRunner {
         try {
             parent=OpenProcess(SYNCHRONIZE,false,parentPid);Check(Valid(parent),"OpenProcess parent");
             job=CreateJobObject(IntPtr.Zero,null);Check(Valid(job),"CreateJobObject");
-            Extended limits=new Extended();limits.BasicLimitInformation.LimitFlags=KILL_ON_CLOSE|ACTIVE_LIMIT;limits.BasicLimitInformation.ActiveProcessLimit=8;
+            Extended limits=new Extended();limits.BasicLimitInformation.LimitFlags=KILL_ON_CLOSE|ACTIVE_LIMIT|0x100|0x200;limits.BasicLimitInformation.ActiveProcessLimit=8;limits.ProcessMemoryLimit=new UIntPtr(384u*1024u*1024u);limits.JobMemoryLimit=new UIntPtr(768u*1024u*1024u);
             Check(SetInformationJobObject(job,9,ref limits,(uint)Marshal.SizeOf(typeof(Extended))),"SetInformationJobObject");
+            CpuRate cpu=new CpuRate();cpu.ControlFlags=5;cpu.Rate=2500;Check(SetCpuRate(job,15,ref cpu,(uint)Marshal.SizeOf(typeof(CpuRate))),"Set job CPU hard cap");
             std[0]=DuplicateStd(-10);std[1]=DuplicateStd(-11);std[2]=DuplicateStd(-12);
             IntPtr size=IntPtr.Zero;InitializeProcThreadAttributeList(IntPtr.Zero,2,0,ref size);
             if(size.ToInt64()<=0||size.ToInt64()>65536)throw new InvalidOperationException("Attribute list size");

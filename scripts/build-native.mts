@@ -9,7 +9,7 @@ const root=resolve(fileURLToPath(new URL('../',import.meta.url)));
 const base=join(root,'.runtime'),out=join(base,'native');
 for(const p of [base,out]){mkdirSync(p,{recursive:true});const s=lstatSync(p);if(!s.isDirectory()||s.isSymbolicLink()||resolve(realpathSync(p))!==p)throw Error('Unsafe native build directory');}
 const compiler=join(process.env.SystemRoot??'C:\\Windows','Microsoft.NET','Framework64','v4.0.30319','csc.exe');
-for(const [source,name] of [['JobRunner.cs','NexusBridge.Job.exe'],['FileMove.cs','NexusBridge.FileMove.exe']]){
+for(const [source,name] of [['JobRunner.cs','NexusBridge.Job.exe'],['FileMove.cs','NexusBridge.FileMove.exe'],['AppContainerJobRunner.cs','NexusBridge.AppContainer.exe']]){
   const target=join(out,name),temp=join(out,'build-'+randomUUID()+'.exe');
   try{
     const c=spawnSync(compiler,['/nologo','/target:exe','/platform:x64','/optimize+','/out:'+temp,join(root,'native',source)],{shell:false,stdio:'inherit',windowsHide:true});

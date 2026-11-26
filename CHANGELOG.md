@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0 — G1 local MVP — 2026-11-26
+
+- Native handle-relative file I/O, pin-race checks and interrupted recovery.
+- Dedicated nonadmin AppContainer, bounded Job Objects and executable SHA-256 approval.
+- Trusted audit anchor, offline archive and retention; local G1 acceptance PASS.
+- No production release or remote listener; G0-R pending.
+
 ## 0.1.0-alpha.5 — 2026-11-26
 
 - Native Job Objects and bounded stdin.
@@ -20,4 +27,4 @@
 - alpha.2: clean archive verification and test setup corrections.
 - alpha.1: local isolated file and fixed process MCP prototype.
 
-All versions are development alphas, not production releases.
+No version is a production 1.0 release.

@@ -1,19 +1,15 @@
 # Security policy
 
-NexusBridge is a development alpha. Do not expose it to untrusted networks or grant it access to personal or production data.
-
-## Supported versions
-
-Only the current development snapshot is maintained; no production security support guarantee is provided.
+NexusBridge v0.1.0 is a local MVP, not production-ready. No untrusted network exposure or personal/production data in the disposable test runner.
 
 ## Reporting
 
-Use GitHub's private vulnerability reporting if available, or contact the repository owner privately. Do not include credentials, private paths, tokens, screenshots or exploit details in public issues. If private reporting is unavailable, request a private contact channel without disclosing the vulnerability.
+Use GitHub private vulnerability reporting if available or contact the owner privately. Never post credentials, private paths, tokens, screenshots or exploit details publicly.
 
-## Current boundaries
+## Local boundaries
 
-The stdio runner creates a fresh synthetic workspace. Read-only is the default. File checks and an audit hash chain are defense-in-depth, not a complete OS sandbox or a signature. A same-user hostile external writer, Windows reparse/TOCTOU hazards, descendant process isolation, audit truncation across restarts and full local approval enforcement remain open engineering work. Do not run as administrator or use a public tunnel.
+The default stdio runner is read-only and synthetic. An owner-provisioned dedicated non-admin profile adds protected ACLs, AppContainer zero capabilities and loopback-exemption checks, a creation-time Job Object with process/CPU/memory caps, and exact one-use approvals. Native file operations verify pinned handle-relative paths, reject reparse points, ADS, hardlinks and conflicting hashes. Protected checkpoints permit explicit recovery after interrupted replacement; the owner maintains an offline audit anchor, verified archive and retention policy.
 
-Never commit runtime data, secrets or private integration evidence.
+The tested AppContainer denied external TCP and protected file access while ordinary baseline TCP succeeded. This is bounded evidence, not proof against all protocols, all attacks, privileged owner/admin or OS compromise. No general content DLP, signed installer, remote security or production certification. Job-only disposable runner is not an OS sandbox for arbitrary commands. The owner must provision and protect roots, keep sensitive data out of selected workspace/output, and maintain audit archives. Never deploy a public G1 endpoint.
 
-Alpha.5 adds a native process lifetime boundary, pinned-handle transfer, exact one-time local approval and an experimental dedicated non-admin profile. These are not a full network or filesystem sandbox. Remaining risks include native read/write/create/list TOCTOU, child access to core audit/checkpoints, network isolation and audit retention/anchoring. Do not deploy the profile or runner as a production service.
+See [local runbook](docs/G1-LOCAL.md) for precise limits. Never commit runtime data, secrets or private integration evidence.

@@ -4,48 +4,46 @@
 
 **A self-hosted bridge between AI conversations and your own computer.**
 
-![Development alpha](https://img.shields.io/badge/status-development%20alpha-orange)
+![Local MVP](https://img.shields.io/badge/status-G1%20local%20MVP-blue)
 ![Windows 11 x64](https://img.shields.io/badge/platform-Windows%2011%20x64-0078D4)
 ![Node.js 24](https://img.shields.io/badge/Node.js-24-339933)
 ![MCP](https://img.shields.io/badge/protocol-MCP-635bff)
 [![Windows CI](https://github.com/KamenevVA/NexusBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/KamenevVA/NexusBridge/actions/workflows/ci.yml)
 
-[Русский](README.ru.md) · [Roadmap](docs/ROADMAP.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
+[Русский](README.ru.md) · [Roadmap](docs/ROADMAP.md) · [Local MVP runbook](docs/G1-LOCAL.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
-## What is NexusBridge?
+## NexusBridge v0.1.0
 
-NexusBridge is a Windows-first project for connecting an ordinary ChatGPT conversation to owner-authorized computer operations using the Model Context Protocol (MCP). The target architecture keeps the execution policy and data on your own infrastructure. It does not require a separate paid text-generation API.
+NexusBridge is a Windows-first project for owner-authorized computer operations through MCP. Its target architecture keeps execution policy and data on your own infrastructure, without a separate paid text-generation API.
 
-> **Development alpha — not production-ready.** This public snapshot is a local, isolated MCP development sandbox. It does not provide general remote PC access, arbitrary shell execution, a GUI, or a permanent HTTPS endpoint. A separate restricted ChatGPT Desktop integration proof succeeded in the owner's environment; compatibility on other accounts, web and mobile is not guaranteed.
+**G1 local MVP accepted in the owner's Windows environment. Not production 1.0.** The current public snapshot provides local stdio only, not a general remote terminal, permanent HTTPS endpoint, GUI or installer. A separate restricted ordinary ChatGPT Desktop integration proof succeeded; independent web/mobile compatibility remains pending.
 
-## Current capabilities
-
-| Module | Available in alpha.5 |
-| :--- | :--- |
-| Files | Directory listing/tree, text and binary reads/writes, search, copy, exact-match edits, ordered patches, native same-volume move, recoverable trash and restore |
-| Integrity | SHA-256 conflict checks, bounded inputs, backup before replacement |
-| Processes | Exact-approved fixed executable templates, native Windows Job Objects, bounded input/output and descendant cancellation |
-| Guard | Read-only default, exact one-time owner approvals, local emergency stop, path checks and persistent redacted audit |
-| MCP | Local stdio server with 25 tools when both sandbox flags are enabled; 11 read-only tools by default |
+| Module | Local MVP |
+|---|---|
+| Files | Native handle-relative list, read, create, write, move and recoverable trash; binary/text pagination, exact patches, copy and search |
+| Recovery | SHA-256 conflicts, protected checkpoints, interrupted-write recovery |
+| Processes | Owner-approved fixed executable/args/hash, AppContainer zero capabilities and Job Objects in a dedicated local profile |
+| Guard | Read-only default, local one-time approvals, emergency stop, redacted audit, owner anchor/archive/retention |
+| MCP | 26 tools with explicit capabilities, 11 read-only by default |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     Client["Local MCP client"] --> Core["Nexus Core"]
-    Core --> Guard["Local policy"]
-    Guard --> Files["Sandbox files"]
-    Guard --> Proc["Fixed process templates"]
-    Guard --> Audit["Audit journal"]
+    Core --> Guard["Owner policy"]
+    Guard --> Files["Native handle-relative I/O"]
+    Guard --> Proc["AppContainer + Job Objects"]
+    Guard --> Audit["Protected audit and checkpoints"]
 ```
 
-The future ChatGPT HTTPS ingress, relay, desktop helper and GUI are separate workstreams, not features of this public runner.
+The Job-only disposable runner is synthetic. The dedicated profile adds the OS principal and AppContainer boundary; it requires owner-side ACL provisioning. Future remote ingress and relay are separate gates.
 
 ## Quick start
 
-Requirements: Windows 11 x64, Node.js 24.x, npm and Git. Run without elevation.
+Windows 11 x64, Node.js 24.x, Git and installed Windows .NET Framework x64 compiler. Run without elevation:
 
 ```powershell
 git clone https://github.com/KamenevVA/NexusBridge.git
@@ -53,41 +51,25 @@ cd NexusBridge
 npm ci --ignore-scripts
 npm run typecheck
 npm test
-```
-
-Start the local stdio server (read-only by default):
-
-```powershell
 node src/mvp-stdio.ts
 ```
 
-For a local MCP client testing the disposable sandbox, pass `--sandbox-write` and/or `--sandbox-exec` explicitly. The latter enables only a fixed self-test process, with a one-time local approval. Move, trash and restore also require exact local approval. Native helpers are compiled by npm test or npm run build:native using the installed Windows .NET Framework x64 compiler. The server communicates using stdio, not a TCP listener. Do not expose this alpha to the internet.
+Read-only by default. For disposable tests, pass explicit `--sandbox-write` or `--sandbox-exec`; exec offers only the synthetic fixed self-test template. Local owner approvals and dedicated profile provisioning are documented in [G1-LOCAL.md](docs/G1-LOCAL.md). Do not expose either runner over a tunnel.
 
-For an approval request, the local owner reviews the exact operation using the session name printed to stderr. Run the following in a separate local terminal (not through MCP):
+## Verification
 
-    node scripts/guard-local.mts list alpha-SESSION
-    node scripts/guard-local.mts approve alpha-SESSION APPROVAL-UUID
-    node scripts/guard-local.mts stop alpha-SESSION
-
-Approval is single-use, bound to the exact operation and expires. The experimental dedicated profile runner passed a restricted non-admin Windows test in the owner environment; it does not yet enforce a separate network sandbox and is not production-ready.
+The local acceptance suite passed 31/31 internal tests, plus separate non-admin Windows and AppContainer TCP proofs. The public suite excludes account-specific G0 tests and private proof controllers. CI verifies the public source; it does not certify every Windows configuration or live ChatGPT account.
 
 ## Road to 1.0
 
 | Gate | Objective | State |
-| :--- | :--- | :--- |
-| G0-L | Restricted ChatGPT Desktop integration proof | Verified in owner environment |
-| G1 | Files, process control and local guard | In development |
-| G2 | Stable authenticated relay | Pending |
-| G3 | Console, onboarding and installer | Pending |
-| G4 | Workspaces, Git and workflows | Pending |
-| G5 | Desktop vision and UI automation | Pending |
-| G6 | Multi-device infrastructure | Pending |
-| G7 | Security review, soak testing and production release | Pending |
+|---|---|---|
+| G0-L | Restricted ChatGPT Desktop integration | Passed in owner environment |
+| G1 | Local filesystem, restricted processes and guard | Passed in owner environment |
+| G0-R | Independent web/mobile integration | Pending |
+| G2 | Stable authenticated relay | Blocked by G0-R |
+| G3–G7 | Console, workflows, vision, infrastructure, production | Pending |
 
-See the [detailed roadmap](docs/ROADMAP.md), [changelog](CHANGELOG.md) and [security policy](SECURITY.md).
+See the [roadmap](docs/ROADMAP.md), [changelog](CHANGELOG.md) and [security policy](SECURITY.md).
 
-## Repository scope
-
-Public development snapshots contain reviewed generic source and synthetic tests. Private runtime data, account-specific integration logs, credentials and infrastructure configuration are excluded. The public test suite covers the published modules; internal integration tests are tracked separately.
-
-No open-source license has been selected yet. Do not assume permission to redistribute or reuse the code beyond applicable law and GitHub's terms. NexusBridge is an independent project, not an official OpenAI product.
+Public snapshots exclude private runtime data, credentials, account-specific logs and infrastructure configuration. No open-source license has been selected. NexusBridge is independent, not an official OpenAI product.

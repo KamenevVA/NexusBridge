@@ -20,7 +20,7 @@ test('G1 isolated workspace MCP and fixed command lifecycle',async t=>{
   await m.server.connect(a);await c.connect(b);
   async function raw(name:string,args:Record<string,unknown>={}){return c.callTool({name,arguments:args});}
   async function call(name:string,args:Record<string,unknown>={}){let r=await raw(name,args);assert.equal(r.isError??false,false,JSON.stringify(r));let v=JSON.parse((r.content as Array<{text:string}>)[0].text);if(name==='start_process'&&v.status==='awaiting_approval'){await approveSynthetic(base,v);r=await raw(name,{...args,approvalId:v.approvalId});assert.equal(r.isError??false,false,JSON.stringify(r));v=JSON.parse((r.content as Array<{text:string}>)[0].text);}return v;}
-  assert.equal((await c.listTools()).tools.length,24);
+  assert.equal((await c.listTools()).tools.length,25);
   await call('create_directory',{path:'Проект'});
   const content='Привет\r\nNexusBridge\r\n';const hash=createHash('sha256').update(content).digest('hex');
   assert.equal((await call('write_file',{path:'Проект/тест.txt',content,expectedHash:null})).sha256,hash);

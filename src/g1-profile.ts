@@ -9,12 +9,14 @@ import {execFileSync} from 'node:child_process';
 import {StdioServerTransport} from '@modelcontextprotocol/sdk/server/stdio.js';
 import {makeMvp} from './mvp-core.ts';
 import {createLocalGuard} from './g1-local-guard.ts';
-import {openAuditJournal} from './g1-audit-journal.ts';
+import {openAuditJournal,readAuditAnchor} from './g1-audit-journal.ts';
 const path=z.string().min(4).max(1024);
 const profileSchema=z.object({
   v:z.literal(1),sessionId:z.string().uuid(),executorSid:z.string().regex(/^S-1-5-[0-9-]+$/),expiresAt:z.number().int(),
   workspaceRoot:path,checkpointRoot:path,auditRoot:path,controlRoot:path,pendingRoot:path,
   scopes:z.object({read:z.literal(true),write:z.boolean(),exec:z.boolean()}).strict(),
+  appContainerProfile:z.string().regex(/^NexusBridgeExec[0-9a-f]{32}$/).optional(),
+  auditRetentionDays:z.number().int().min(1).max(365).default(30),
   commands:z.record(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),z.object({exe:path,cwd:path,args:z.array(z.string().max(4096)).max(32),timeoutMs:z.number().int().min(100).max(60000),input:z.boolean()}).strict())
 }).strict();
 const sha=(b:Buffer)=>createHash('sha256').update(b).digest('hex');
@@ -43,19 +45,22 @@ const whoami=join(process.env.SystemRoot??'C:\\Windows','System32','whoami.exe')
 const user=execFileSync(whoami,['/user','/fo','csv','/nh'],{encoding:'utf8',windowsHide:true}),groups=execFileSync(whoami,['/groups','/fo','csv','/nh'],{encoding:'utf8',windowsHide:true});
 const sid=user.match(/S-1-5-[0-9-]+/)?.[0];
 if(sid!==p.executorSid||['S-1-5-18','S-1-5-19','S-1-5-20'].includes(sid)||groups.includes('S-1-5-32-544'))throw Error('Dedicated non-admin executor required');
-if(p.expiresAt<=Date.now()||p.expiresAt>Date.now()+3600000||Object.keys(p.commands).length>8||(!p.scopes.exec&&Object.keys(p.commands).length))throw Error('Invalid local profile policy');
+if(p.expiresAt<=Date.now()||p.expiresAt>Date.now()+3600000||Object.keys(p.commands).length>8||(!p.scopes.exec&&(Object.keys(p.commands).length||p.appContainerProfile))||(p.scopes.exec&&!p.appContainerProfile))throw Error('Invalid local profile policy');
 const appRoot=resolve(fileURLToPath(new URL('../',import.meta.url)));
 const dirs=await Promise.all([p.workspaceRoot,p.checkpointRoot,p.auditRoot,p.controlRoot,p.pendingRoot,appRoot].map(directory));
 for(let i=0;i<dirs.length;i++)for(let j=i+1;j<dirs.length;j++)if(nested(dirs[i].p,dirs[j].p)||nested(dirs[j].p,dirs[i].p))throw Error('Profile roots overlap');
 if(dirname(profilePath)!==p.controlRoot||dirs[0].dev!==dirs[1].dev)throw Error('Profile location or checkpoint volume invalid');
 await requireReadOnlyFile(profilePath);await requireReadOnlyDirectory(p.controlRoot);await requireReadOnlyDirectory(appRoot);
-for(const file of ['NexusBridge.Job.exe','NexusBridge.FileMove.exe'])await requireReadOnlyFile(join(appRoot,'.runtime','native',file));
+for(const dir of ['src','scripts','node_modules','.runtime/native'])await requireReadOnlyDirectory(join(appRoot,dir));
+for(const file of ['package.json','src/g1-profile.ts','src/g1-local-guard.ts','src/g1-audit-journal.ts','src/mvp-core.ts','src/processes.ts','src/workspace.ts'])await requireReadOnlyFile(join(appRoot,file));
+for(const file of ['NexusBridge.Job.exe','NexusBridge.FileMove.exe','NexusBridge.AppContainer.exe'])await requireReadOnlyFile(join(appRoot,'.runtime','native',file));
 for(const t of Object.values(p.commands)){
   local(t.exe);local(t.cwd);
   if(!nested(p.workspaceRoot,t.cwd)||[p.workspaceRoot,p.checkpointRoot,p.auditRoot,p.pendingRoot].some(r=>nested(r,t.exe)))throw Error('Command path outside local policy');
   await requireReadOnlyFile(t.exe);
 }
-const journal=await openAuditJournal(p.auditRoot,p.sessionId);
+const anchorPath=join(p.controlRoot,'audit-anchor.json'),anchor=await readAuditAnchor(anchorPath,p.sessionId);if(anchor)await requireReadOnlyFile(anchorPath);
+const journal=await openAuditJournal(p.auditRoot,p.sessionId,{anchor,requireAnchorOnExisting:true,retentionDays:p.auditRetentionDays});
 let enabled=true,revocationRecorded=false;
 async function revoke(action:'kill_switch'|'policy_revoked'){
   enabled=false;if(!revocationRecorded){revocationRecorded=true;await journal.append({action,outcome:'ok'}).catch(()=>{});}
@@ -72,7 +77,7 @@ async function assertActive(){
 const m=await makeMvp({root:p.workspaceRoot,checkpointRoot:p.checkpointRoot,write:p.scopes.write,exec:p.scopes.exec,guard,assertActive,
   audit:async e=>{await assertActive();try{await journal.append(e);}catch(e){await revoke('policy_revoked');throw e;}},
   auditPage:async (offset,limit)=>{await assertActive();try{return await journal.page(offset,limit);}catch(e){await revoke('policy_revoked');throw e;}},
-  commands:p.commands});
+  commands:p.commands,appContainerProfile:p.appContainerProfile});
 const transport=new StdioServerTransport();let closing=false;
 async function stop(){if(closing)return;closing=true;enabled=false;await m.stop().catch(()=>{});await journal.close().catch(()=>{});}
 await m.server.connect(transport);

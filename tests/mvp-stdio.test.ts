@@ -11,7 +11,7 @@ test('G1 standalone alpha actual stdio process',async t=>{
   const c=new Client({name:'alpha-stdio-test',version:'0.1.0'});
   const transport=new StdioClientTransport({command:process.execPath,args:[resolve('src/mvp-stdio.ts'),'--sandbox-write','--sandbox-exec'],stderr:'ignore'});
   t.after(()=>c.close());await c.connect(transport);
-  assert.equal((await c.listTools()).tools.length,25);
+  assert.equal((await c.listTools()).tools.length,26);
   async function call(name:string,args:Record<string,unknown>={}){const r=await c.callTool({name,arguments:args});assert.equal(r.isError??false,false,JSON.stringify(r));return JSON.parse((r.content as Array<{text:string}>)[0].text);}
   assert.equal((await call('get_device_info')).platform,'win32');
   const content=randomUUID(),sha=createHash('sha256').update(content).digest('hex');
