@@ -23,7 +23,7 @@
 
 NexusBridge is a Windows-first project for owner-authorized computer operations through MCP. Its target architecture keeps execution policy and data on your own infrastructure, without a separate paid text-generation API.
 
-**G1 local MVP accepted in the owner's Windows environment. Not production 1.0.** The current public snapshot provides local stdio only, not a general remote terminal, permanent HTTPS endpoint, GUI or installer. A separate restricted ordinary ChatGPT Desktop integration proof succeeded; ordinary remote Chat read/write, OAuth, independent file hash and cleanup also passed in the owner environment. Mobile is out of scope.
+**Public snapshot: G1 local MVP, v0.1.0. Owner-environment acceptance: G0-L, G0-R, G1 and G2 passed. Not production 1.0.** The public code provides local stdio only; the persistent authenticated relay and restricted remote worker have been verified separately in the owner environment and are not included in this snapshot. Ordinary ChatGPT read/write, OAuth, independent file/hash checks, replay protection, service restart, Windows reboot and recovery after restored VPN connectivity passed there. Mobile is out of scope.
 
 | Module | Local MVP |
 |---|---|
@@ -44,7 +44,7 @@ flowchart LR
     Guard --> Audit["Protected audit and checkpoints"]
 ```
 
-The Job-only disposable runner is synthetic. The dedicated profile adds the OS principal and AppContainer boundary; it requires owner-side ACL provisioning. Future remote ingress and relay are separate gates.
+The Job-only disposable runner is synthetic. The dedicated profile adds the OS principal and AppContainer boundary; it requires owner-side ACL provisioning. Remote ingress and relay are outside this public snapshot.
 
 ## Quick start
 
@@ -72,8 +72,8 @@ The local acceptance suite passed 31/31 internal tests, plus separate non-admin 
 | G0-L | Restricted ChatGPT Desktop integration | Passed in owner environment |
 | G1 | Local filesystem, restricted processes and guard | Passed in owner environment |
 | G0-R | Independent remote Chat integration | Passed in owner environment |
-| G2 | Stable authenticated relay | Next |
-| G3–G7 | Console, workflows, vision, infrastructure, production | Pending |
+| G2 | Stable authenticated relay | Passed in owner environment; not in public snapshot |
+| G3–G7 | Console, workflows, vision, infrastructure, production | Acceptance pending |
 
 See the [roadmap](docs/ROADMAP.md), [changelog](CHANGELOG.md) and [security policy](SECURITY.md).
 
@@ -92,7 +92,7 @@ Public snapshots exclude private runtime data, credentials, account-specific log
 
 [English](#english) · [Дорожная карта](docs/ROADMAP.md) · [Локальный запуск](docs/G1-LOCAL.md) · [Безопасность](SECURITY.md)
 
-**G1 — локальный MVP принят на Windows владельца. Это не production 1.0.** 26 инструментов MCP при явном включении разрешений, 11 только чтения по умолчанию. Стабильный удалённый relay, GUI, установщик и произвольный терминал не реализованы.
+**Публичный снимок — локальный MVP G1, v0.1.0. В среде владельца приняты G0-L, G0-R, G1 и G2. Это не production 1.0.** 26 инструментов MCP при явном включении разрешений, 11 только чтения по умолчанию. Постоянный авторизованный relay и ограниченный удалённый Worker проверены отдельно, но в публичный снимок не входят. GUI и установщик также не входят.
 
 - Нативные операции с проверенными файловыми дескрипторами, SHA-256, двоичные данные, патчи, корзина, checkpoints и восстановление после прерывания.
 - Отдельная непривилегированная учётная запись, AppContainer без capabilities и Windows Job Objects для разрешённых шаблонов команд.
@@ -112,6 +112,6 @@ npm test
 node src/mvp-stdio.ts
 ```
 
-Последняя команда запускает одноразовую тестовую среду только для чтения. Защищённый профиль требует отдельной локальной настройки владельцем; см. [инструкцию](docs/G1-LOCAL.md). Не публикуйте сервер через туннель. G0-L подтверждён в обычном ChatGPT Desktop владельца, G0-R: удалённые чтение и запись через обычный ChatGPT подтверждены. Мобильный клиент исключён из ТЗ владельцем; постоянный relay — следующий этап. Публичный репозиторий не содержит частных журналов, конфигураций и ключей. Лицензия пока не утверждена.
+Последняя команда запускает одноразовую тестовую среду только для чтения. Защищённый профиль требует отдельной локальной настройки владельцем; см. [инструкцию](docs/G1-LOCAL.md). Не публикуйте сервер через туннель. G0-L подтверждён в обычном ChatGPT Desktop владельца, G0-R: удалённые чтение и запись через обычный ChatGPT подтверждены. Мобильный клиент исключён из ТЗ. G2 принят в среде владельца: подтверждены постоянное авторизованное подключение, защита от повторного исполнения, восстановление после перезапуска служб, перезагрузки Windows и восстановления VPN. Удалённый код G2 пока не опубликован. Публичный репозиторий не содержит частных журналов, конфигураций и ключей. Лицензия пока не утверждена.
 
 </details>
